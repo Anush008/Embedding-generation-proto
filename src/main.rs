@@ -1,24 +1,22 @@
-use anyhow::Result;
+use actix_web::{post, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use ndarray::Axis;
 use ort::{
-    tensor::{FromArray, InputTensor, OrtOwnedTensor},
+    tensor::{FromArray, InputTensor},
     Environment, ExecutionProvider, GraphOptimizationLevel, LoggingLevel, SessionBuilder,
 };
-use std::{sync::Arc, path::Path};
-use ndarray::Axis;
-use actix_web::{post, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
-use rayon::prelude::*;
+use std::{path::Path, sync::Arc};
 
 pub struct Semantic {
     tokenizer: Arc<tokenizers::Tokenizer>,
     session: Arc<ort::Session>,
 }
 
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
 impl Semantic {
-    pub fn initialize(
-        model_dir: &Path,
-    ) -> Result<Self> {
-       let environment = Arc::new(
+    pub fn initialize(model_dir: &Path) -> Result<Self> {
+        let environment = Arc::new(
             Environment::builder()
                 .with_name("Encode")
                 .with_log_level(LoggingLevel::Warning)
@@ -26,8 +24,7 @@ impl Semantic {
                 .build()?,
         );
 
-        let threads = num_cpus::get() as i16;
-        dbg!(threads);
+        let threads = 8;
 
         Ok(Self {
             tokenizer: tokenizers::Tokenizer::from_file(model_dir.join("tokenizer.json"))
@@ -41,63 +38,61 @@ impl Semantic {
         })
     }
 
-    pub fn embed(&self, sequence: &str) -> anyhow::Result<Vec<f32>> {
+    pub fn embed(&self, sequence: &str) -> Result<Vec<f32>> {
         let tokenizer_output: tokenizers::Encoding = self.tokenizer.encode(sequence, true).unwrap();
 
-        let input_ids: &[u32] = tokenizer_output.get_ids();
-        let attention_mask: &[u32] = tokenizer_output.get_attention_mask();
-        let token_type_ids: &[u32] = tokenizer_output.get_type_ids();
-        let length: usize = input_ids.len();
+        let input_ids = tokenizer_output.get_ids();
+        let attention_mask = tokenizer_output.get_attention_mask();
+        let token_type_ids = tokenizer_output.get_type_ids();
+        let length = input_ids.len();
 
-        let inputs_ids_array: ndarray::ArrayBase<ndarray::OwnedRepr<i64>, ndarray::Dim<[usize; 2]>> = ndarray::Array::from_shape_vec(
+        let inputs_ids_array = ndarray::Array::from_shape_vec(
             (1, length),
             input_ids.iter().map(|&x| x as i64).collect(),
         )?;
 
-        let attention_mask_array: ndarray::ArrayBase<ndarray::OwnedRepr<i64>, ndarray::Dim<[usize; 2]>> = ndarray::Array::from_shape_vec(
+        let attention_mask_array = ndarray::Array::from_shape_vec(
             (1, length),
             attention_mask.iter().map(|&x| x as i64).collect(),
         )?;
 
-        let token_type_ids_array: ndarray::ArrayBase<ndarray::OwnedRepr<i64>, ndarray::Dim<[usize; 2]>> = ndarray::Array::from_shape_vec(
+        let token_type_ids_array = ndarray::Array::from_shape_vec(
             (1, length),
             token_type_ids.iter().map(|&x| x as i64).collect(),
         )?;
 
-        let outputs: Vec<ort::tensor::DynOrtTensor<'_, ndarray::Dim<ndarray::IxDynImpl>>> = self.session.run([
+        let outputs = self.session.run([
             InputTensor::from_array(inputs_ids_array.into_dyn()),
             InputTensor::from_array(attention_mask_array.into_dyn()),
             InputTensor::from_array(token_type_ids_array.into_dyn()),
         ])?;
 
-        let output_tensor: OrtOwnedTensor<f32, _> = outputs[0].try_extract().unwrap();
-        let sequence_embedding: &ndarray::ArrayBase<ndarray::ViewRepr<&f32>, ndarray::Dim<ndarray::IxDynImpl>> = &*output_tensor.view();
-        let pooled: ndarray::ArrayBase<ndarray::OwnedRepr<f32>, ndarray::Dim<ndarray::IxDynImpl>> = sequence_embedding.mean_axis(Axis(1)).unwrap();
+        let output_tensor = outputs[0].try_extract().unwrap();
+        let sequence_embedding = &*output_tensor.view();
+        let pooled = sequence_embedding.mean_axis(Axis(1)).unwrap();
         Ok(pooled.to_owned().as_slice().unwrap().to_vec())
     }
-
-
 }
 
 #[derive(Deserialize)]
 struct Data {
-    strings: Vec<String>,
+    string: String,
 }
 
 #[derive(Serialize)]
 struct Embeddings {
-    embeddings: Vec<Vec<f32>>,
+    embeddings: Vec<f32>,
 }
 
 #[post("/embeddings")]
-async fn embeddings(request: HttpRequest, data: web::Json<Data>) -> actix_web::Result<impl Responder> {
+async fn embeddings(
+    request: HttpRequest,
+    data: web::Json<Data>,
+) -> actix_web::Result<impl Responder> {
     let model = request
         .app_data::<Arc<Semantic>>()
         .expect("Pool app_data failed to load!");
-    dbg!(data.strings.len());
-    let embeds: Vec<Vec<f32>> = data.strings.par_iter().map(|string| model.embed(string).unwrap()).collect();
-    let embeddings = Embeddings { embeddings: embeds };
-    Ok(web::Json(embeddings))
+    Ok(web::Json(model.embed(&data.string).unwrap()))
 }
 
 #[actix_web::main]
