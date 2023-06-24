@@ -1,0 +1,16 @@
+[package]
+name = "onn"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = "4.3.1"
+anyhow = "1.0.71"
+ndarray = "0.15.6"
+num_cpus = "1.15.0"
+ort = "1.14.8"
+rayon = "1.7.0"
+serde = "1.0.164"
+tokenizers = { version= "0.13.3", features = ["http"] }
