@@ -2,8 +2,10 @@ use actix_web::{post, web, App, HttpRequest, HttpResponse, HttpServer, Responder
 use ndarray::Axis;
 use ort::{
     tensor::{FromArray, InputTensor},
-    Environment, ExecutionProvider, GraphOptimizationLevel, LoggingLevel, SessionBuilder,
+    Environment, ExecutionProvider, GraphOptimizationLevel, SessionBuilder,
 };
+use rayon::prelude::IntoParallelIterator;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{path::Path, sync::Arc};
 
@@ -19,12 +21,11 @@ impl Semantic {
         let environment = Arc::new(
             Environment::builder()
                 .with_name("Encode")
-                .with_log_level(LoggingLevel::Warning)
                 .with_execution_providers([ExecutionProvider::cpu()])
                 .build()?,
         );
 
-        let threads = 8;
+        let threads = 1;
 
         Ok(Self {
             tokenizer: tokenizers::Tokenizer::from_file(model_dir.join("tokenizer.json"))
@@ -33,7 +34,7 @@ impl Semantic {
             session: SessionBuilder::new(&environment)?
                 .with_optimization_level(GraphOptimizationLevel::Level3)?
                 .with_intra_threads(threads)?
-                .with_model_from_file(model_dir.join("model.onnx"))?
+                .with_model_from_file(model_dir.join("model_quantized.onnx"))?
                 .into(),
         })
     }
@@ -72,11 +73,18 @@ impl Semantic {
         let pooled = sequence_embedding.mean_axis(Axis(1)).unwrap();
         Ok(pooled.to_owned().as_slice().unwrap().to_vec())
     }
+
+    pub fn embed_strings(&self, strings: &Vec<String>) -> Vec<Vec<f32>> {
+        strings
+            .into_par_iter()
+            .map(|string| self.embed(&string).unwrap())
+            .collect()
+    }
 }
 
 #[derive(Deserialize)]
 struct Data {
-    string: String,
+    strings: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -92,7 +100,7 @@ async fn embeddings(
     let model = request
         .app_data::<Arc<Semantic>>()
         .expect("Pool app_data failed to load!");
-    Ok(web::Json(model.embed(&data.string).unwrap()))
+    Ok(web::Json(model.embed_strings(&data.strings)))
 }
 
 #[actix_web::main]
