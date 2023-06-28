@@ -8,6 +8,7 @@ use rayon::prelude::IntoParallelIterator;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{path::Path, sync::Arc};
+use std::thread::available_parallelism;
 
 pub struct Semantic {
     tokenizer: Arc<tokenizers::Tokenizer>,
@@ -25,7 +26,7 @@ impl Semantic {
                 .build()?,
         );
 
-        let threads = 4;
+        let threads = available_parallelism().unwrap().get() as i16;
 
         Ok(Self {
             tokenizer: tokenizers::Tokenizer::from_file(model_dir.join("tokenizer.json"))
