@@ -1,4 +1,4 @@
-use actix_web::{post, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web::{post, web::{self,  Data}, App, HttpResponse, HttpServer, Responder};
 use ndarray::Axis;
 use ort::{
     tensor::{FromArray, InputTensor},
@@ -25,7 +25,7 @@ impl Semantic {
                 .build()?,
         );
 
-        let threads = 1;
+        let threads = 4;
 
         Ok(Self {
             tokenizer: tokenizers::Tokenizer::from_file(model_dir.join("tokenizer.json"))
@@ -83,29 +83,27 @@ impl Semantic {
 }
 
 #[derive(Deserialize)]
-struct Data {
+struct Input {
     strings: Vec<String>,
 }
 
 #[derive(Serialize)]
 struct Embeddings {
-    embeddings: Vec<f32>,
+    embeddings: Vec<Vec<f32>>,
 }
 
 #[post("/embeddings")]
 async fn embeddings(
-    request: HttpRequest,
-    data: web::Json<Data>,
+    data: web::Json<Input>,
+    model: web::Data<Arc<Semantic>>,
 ) -> actix_web::Result<impl Responder> {
-    let model = request
-        .app_data::<Arc<Semantic>>()
-        .expect("Pool app_data failed to load!");
-    Ok(web::Json(model.embed_strings(&data.strings)))
+    let embeddings = web::block(move || model.embed_strings(&data.strings)).await?;
+    Ok(web::Json(Embeddings { embeddings }))
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let semantic = Arc::new(Semantic::initialize(Path::new("model")).unwrap());
+    let semantic = Data::new(Arc::new(Semantic::initialize(Path::new("model")).unwrap()));
 
     println!("Model pool created!");
 
