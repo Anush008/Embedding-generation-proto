@@ -104,15 +104,14 @@ async fn embeddings(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let semantic = Data::new(Arc::new(Semantic::initialize(Path::new("model")).unwrap()));
-
     println!("Model pool created!");
 
     HttpServer::new(move || {
+        let semantic = Data::new(Arc::new(Semantic::initialize(Path::new("model")).unwrap()));
         //Increase JSON payload size
         App::new()
             .app_data(web::JsonConfig::default().limit(8929566200))
-            .app_data(semantic.clone())
+            .app_data(semantic)
             .route("/", web::get().to(HttpResponse::Ok))
             .service(embeddings)
     })
