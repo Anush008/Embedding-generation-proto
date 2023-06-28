@@ -75,7 +75,6 @@ impl Embeddings {
     }
 
     pub fn embed_strings(&self, strings: &Vec<String>) -> Vec<Vec<f32>> {
-        println!("Embedding {} strings", strings.len());
         strings
             .into_par_iter()
             .map(|string| self.embed(&string).unwrap())
@@ -116,7 +115,9 @@ impl Embeddings {
         for entry in WalkDir::new(&path) {
             let entry = entry?;
             let path = entry.path();
+            //Ignores files without extension
             if path.is_file() && path.extension().unwrap_or_default() != OsStr::new("") {
+                //Skips files that can't be read as UTF-8
                 let content = match fs::read_to_string(path) {
                     Ok(content) => content,
                     Err(_) => continue,
@@ -126,6 +127,7 @@ impl Embeddings {
         }
         let _ = fs::remove_dir_all(path);
         let time = Instant::now();
+        println!("Generating embeddings for {} files", contents.len());
         let embedding = self.embed_strings(&contents);
         println!("Embedding took: {:?}\n", time.elapsed());
         Ok(embedding)
