@@ -5,8 +5,9 @@ use ort::{
 };
 use rayon::prelude::IntoParallelIterator;
 use rayon::prelude::*;
-use std::{io::Read, thread::available_parallelism, time::Instant};
+use std::{ffi::OsStr, fs, thread::available_parallelism, time::Instant};
 use std::{path::Path, sync::Arc};
+use walkdir::WalkDir;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -92,19 +93,40 @@ impl Embeddings {
         let response = reqwest::get(url).await?.bytes().await?;
         let reader = std::io::Cursor::new(response);
         let mut archive = zip::ZipArchive::new(reader)?;
-        let mut contents = Vec::new();
         for i in 0..archive.len() {
             let mut file = archive.by_index(i)?;
-            let mut content = String::new();
-            if file.is_file() {
-                //Fails for non UTF-8 files
-                match file.read_to_string(&mut content) {
-                    Ok(_) => contents.push(content),
-                    Err(_) => continue,
-                };
+            let outpath = file.mangled_name();
+
+            if (&*file.name()).ends_with('/') {
+                fs::create_dir_all(&outpath)?;
+            } else {
+                if let Some(p) = outpath.parent() {
+                    if !p.exists() {
+                        fs::create_dir_all(&p)?;
+                    }
+                }
+                let mut outfile = fs::File::create(&outpath)?;
+                std::io::copy(&mut file, &mut outfile)?;
             }
         }
         println!("Downloading repo took: {:?}\n", time.elapsed());
+        let path = format!("./{repo_name}-{repo_branch}");
+        let mut contents = Vec::new();
+        for entry in WalkDir::new(&path) {
+            let entry = entry?;
+            let path = entry.path();
+            //Ignores files without extension
+            if path.is_file() && path.extension().unwrap_or_default() != OsStr::new("") {
+                //Skips files that can't be read as UTF-8
+                let content = match fs::read_to_string(path) {
+                    Ok(content) => content,
+                    Err(_) => continue,
+                };
+                contents.push(content);
+            }
+        }
+        let _ = fs::remove_dir_all(path);
+        let time = Instant::now();
         println!("Generating embeddings for {} files", contents.len());
         let embedding = self.embed_strings(&contents);
         println!("Embedding took: {:?}\n", time.elapsed());
