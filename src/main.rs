@@ -1,24 +1,26 @@
+mod db;
+mod embeddings;
+mod github;
+mod prelude;
+mod routes;
 mod utils;
-use std::path::Path;
+use std::{path::Path, sync::Arc};
+
+use actix_web::{web, App, HttpResponse, HttpServer};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let embeddings = utils::embeddings::Embeddings::initialize(Path::new("model")).expect("Failed to initialize model");
-    println!("Model loaded");
-    let emb = embeddings
-        .embed_repo("open-sauced", "hot", "beta")
-        .await
-        .unwrap();
-    println!("{} embeddings generated", emb.len());
-    let emb = embeddings
-        .embed_repo("open-sauced", "ai", "beta")
-        .await
-        .unwrap();
-    println!("{} embeddings generated", emb.len());
-    let emb = embeddings
-        .embed_repo("open-sauced", "insights", "beta")
-        .await
-        .unwrap();
-    println!("{} embeddings generated", emb.len());
-    Ok(())
+    let model: Arc<embeddings::Onnx> = Arc::new(embeddings::Onnx::new(Path::new("model")).unwrap());
+    let db: Arc<db::QdrantDB> = Arc::new(db::QdrantDB::initialize().unwrap());
+
+    HttpServer::new(move || {
+        App::new()
+            .route("/", web::get().to(|| HttpResponse::Ok()))
+            .service(routes::embeddings)
+            .app_data(web::Data::new(model.clone()))
+            .app_data(web::Data::new(db.clone()))
+    })
+    .bind(("0.0.0.0", 3000))?
+    .run()
+    .await
 }
