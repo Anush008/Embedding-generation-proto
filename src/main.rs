@@ -17,6 +17,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .route("/", web::get().to(|| HttpResponse::Ok()))
             .service(routes::embeddings)
+            .service(routes::query)
             .app_data(web::Data::new(model.clone()))
             .app_data(web::Data::new(db.clone()))
     })

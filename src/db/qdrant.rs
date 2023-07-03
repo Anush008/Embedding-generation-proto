@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use super::RepositoryEmbeddingsDB;
 use crate::{
+    embeddings::Embeddings,
     github::{FileEmbeddings, RepositoryEmbeddings},
     prelude::*,
 };
@@ -21,10 +22,9 @@ pub struct QdrantDB {
 #[async_trait]
 impl RepositoryEmbeddingsDB for QdrantDB {
     async fn insert_repo_embeddings(&self, repo: RepositoryEmbeddings) -> Result<()> {
-        let collection_id = repo.repo_id.replace("/", "-");
         self.client
             .create_collection(&CreateCollection {
-                collection_name: collection_id.clone(),
+                collection_name: repo.repo_id.clone(),
                 vectors_config: Some(VectorsConfig {
                     config: Some(Config::Params(VectorParams {
                         size: 384,
@@ -47,9 +47,37 @@ impl RepositoryEmbeddingsDB for QdrantDB {
             })
             .collect();
         self.client
-            .upsert_points(collection_id, points, None)
+            .upsert_points(repo.repo_id, points, None)
             .await?;
         Ok(())
+    }
+
+    async fn get_relevant_files(
+        &self,
+        repo_owner: &str,
+        repo_name: &str,
+        repo_branch: &str,
+        query_embeddings: Embeddings,
+        limit: u64,
+    ) -> Result<Vec<String>> {
+        let search_response = self
+            .client
+            .search_points(&SearchPoints {
+                collection_name: format!("{repo_owner}-{repo_branch}-{repo_name}"),
+                vector: query_embeddings,
+                with_payload: Some(true.into()),
+                limit,
+                ..Default::default()
+            })
+            .await?;
+        let points: Vec<String> = search_response
+            .result
+            .into_iter()
+            .map(|point| {
+                point.get("path").to_string()
+            })
+            .collect();
+        Ok(points)
     }
 }
 impl QdrantDB {

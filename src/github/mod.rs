@@ -51,7 +51,7 @@ pub async fn embed_repo<M: EmbeddingsModel + Send + Sync>(
     println!("Time to embed files: {:?}", time.elapsed());
 
     Ok(RepositoryEmbeddings {
-        repo_id: format!("{repo_owner}/{repo_name}"),
+        repo_id: format!("{repo_owner}-{repo_branch}-{repo_name}"),
         file_embeddings,
     })
 }
@@ -73,7 +73,7 @@ async fn fetch_repo_files(
                 //Fails for non UTF-8 files
                 match file.read_to_string(&mut content) {
                     Ok(_) => Some(File {
-                        path: file.name().to_string(),
+                        path: file.mangled_name().to_string_lossy().to_string(),
                         content: content,
                         size: file.size().to_string(),
                     }),
