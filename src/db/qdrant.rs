@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::RepositoryEmbeddingsDB;
 use crate::{
     embeddings::Embeddings,
-    github::{FileEmbeddings, RepositoryEmbeddings},
+    github::{fetch_file_content, File, FileEmbeddings, RepositoryEmbeddings},
     prelude::*,
 };
 use anyhow::Ok;
@@ -59,7 +59,7 @@ impl RepositoryEmbeddingsDB for QdrantDB {
         repo_branch: &str,
         query_embeddings: Embeddings,
         limit: u64,
-    ) -> Result<Vec<String>> {
+    ) -> Result<Vec<File>> {
         let search_response = self
             .client
             .search_points(&SearchPoints {
@@ -70,14 +70,27 @@ impl RepositoryEmbeddingsDB for QdrantDB {
                 ..Default::default()
             })
             .await?;
-        let points: Vec<String> = search_response
+        let futures: Vec<_> = search_response
             .result
             .into_iter()
             .map(|point| {
-                point.get("path").to_string()
+                let path = point.payload["path"].to_string();
+                async {
+                    let content =
+                        fetch_file_content(repo_owner, repo_name, repo_branch, &path)
+                            .await
+                            .unwrap_or_default();
+                    let length = content.len();
+                    File {
+                        path,
+                        content,
+                        length,
+                    }
+                }
             })
             .collect();
-        Ok(points)
+        let files: Vec<File> = futures::future::join_all(futures).await;
+        Ok(files)
     }
 }
 impl QdrantDB {

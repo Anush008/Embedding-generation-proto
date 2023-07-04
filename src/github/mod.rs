@@ -3,13 +3,14 @@ use crate::{
     prelude::*,
 };
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use serde::Serialize;
 use std::io::Read;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
 pub struct File {
-    path: String,
-    content: String,
-    size: String,
+    pub path: String,
+    pub content: String,
+    pub length: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -37,12 +38,12 @@ pub async fn embed_repo<M: EmbeddingsModel + Send + Sync>(
         .filter_map(|file| {
             let File {
                 path,
-                size,
+                length,
                 content,
             } = file;
             let embed_content = format!(
-                "File path: {}\nFile size: {} bytes\nFile content: {}",
-                &path, &size, &content
+                "File path: {}\nFile length: {} bytes\nFile content: {}",
+                &path, &length, &content
             );
             let embeddings = model.embed(&embed_content).unwrap();
             Some(FileEmbeddings { path, embeddings })
@@ -70,12 +71,13 @@ async fn fetch_repo_files(
             let mut file = archive.by_index(file).unwrap();
             if file.is_file() {
                 let mut content = String::new();
+                let length = content.len();
                 //Fails for non UTF-8 files
                 match file.read_to_string(&mut content) {
                     Ok(_) => Some(File {
-                        path: file.mangled_name().to_string_lossy().to_string(),
+                        path: file.name().split_once("/").unwrap().1.to_string(),
                         content: content,
-                        size: file.size().to_string(),
+                        length,
                     }),
                     Err(_) => None,
                 }
@@ -85,4 +87,21 @@ async fn fetch_repo_files(
         })
         .collect();
     Ok(files)
+}
+
+pub async fn fetch_file_content(
+    repo_owner: &str,
+    repo_name: &str,
+    repo_branch: &str,
+    path: &str,
+) -> Result<String> {
+    let url =
+        format!("https://raw.githubusercontent.com/{repo_owner}/{repo_name}/{repo_branch}/{path}");
+    let response = reqwest::get(url).await?;
+    if response.status() == reqwest::StatusCode::OK {
+        let content = response.text().await?;
+        Ok(content)
+    } else {
+        Err(anyhow::anyhow!("Unable to fetch file content"))
+    }
 }
