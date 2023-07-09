@@ -1,4 +1,5 @@
-use crate::db::RepositoryEmbeddingsDB;
+use crate::embeddings::EmbeddingsModel;
+use crate::{db::RepositoryEmbeddingsDB, github::Repository};
 use actix_web::{
     post,
     web::{self, Json},
@@ -7,41 +8,35 @@ use actix_web::{
 use reqwest::StatusCode;
 use serde::Deserialize;
 use std::sync::Arc;
-use crate::embeddings::EmbeddingsModel;
 
 use crate::{db::QdrantDB, embeddings::Onnx, github::embed_repo};
-
-#[derive(Deserialize)]
-struct Repo {
-    repo_name: String,
-    repo_owner: String,
-    repo_branch: String,
-}
 
 #[derive(Deserialize)]
 struct Query {
     repo_owner: String,
     repo_name: String,
     repo_branch: String,
-    query: String
+    query: String,
 }
 
 #[post("/embeddings")]
 async fn embeddings(
-    data: Json<Repo>,
+    data: Json<Repository>,
     db: web::Data<Arc<QdrantDB>>,
     model: web::Data<Arc<Onnx>>,
 ) -> impl Responder {
-    let Repo {
-        repo_name,
-        repo_owner,
-        repo_branch,
+    let Repository {
+        name,
+        owner,
+        branch,
     } = data.into_inner();
 
     let embeddings = embed_repo(
-        &repo_owner,
-        &repo_name,
-        &repo_branch,
+        Repository {
+            owner,
+            name,
+            branch,
+        },
         model.get_ref().as_ref(),
     )
     .await
@@ -64,21 +59,23 @@ async fn query(
         repo_owner,
         repo_name,
         repo_branch,
-        query
+        query,
     } = data.into_inner();
 
     let relevant_file_paths = db
         .get_ref()
         .as_ref()
         .get_relevant_files(
-            &repo_owner,
-            &repo_name,
-            &repo_branch,
+            Repository {
+                owner: repo_owner,
+                name: repo_name,
+                branch: repo_branch,
+            },
             model.get_ref().as_ref().embed(&query).unwrap(),
             2,
         )
         .await
         .unwrap();
-    
+
     HttpResponse::Ok().json(relevant_file_paths)
 }

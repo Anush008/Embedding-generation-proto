@@ -3,7 +3,7 @@ use crate::{
     prelude::*,
 };
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use std::io::Read;
 
 #[derive(Debug, Default, Serialize)]
@@ -23,14 +23,17 @@ pub struct RepositoryEmbeddings {
     pub file_embeddings: Vec<FileEmbeddings>,
 }
 
-pub async fn embed_repo<M: EmbeddingsModel + Send + Sync>(
-    repo_owner: &str,
-    repo_name: &str,
-    repo_branch: &str,
-    model: &M,
+#[derive(Debug, Clone, Deserialize)]
+pub struct Repository {
+    pub owner: String,
+    pub name: String, 
+    pub branch: String
+}
+pub async fn embed_repo<M: EmbeddingsModel + Send + Sync>(repository: Repository, model: &M,
 ) -> Result<RepositoryEmbeddings> {
+    let Repository { owner: repo_owner, name: repo_name, branch: repo_branch } = &repository;
     let time = std::time::Instant::now();
-    let files: Vec<File> = fetch_repo_files(repo_owner, repo_name, repo_branch).await?;
+    let files: Vec<File> = fetch_repo_files(repository.clone()).await?;
     println!("Time to fetch files: {:?}", time.elapsed());
     let time = std::time::Instant::now();
     let file_embeddings: Vec<FileEmbeddings> = files
@@ -57,11 +60,8 @@ pub async fn embed_repo<M: EmbeddingsModel + Send + Sync>(
     })
 }
 
-async fn fetch_repo_files(
-    repo_owner: &str,
-    repo_name: &str,
-    repo_branch: &str,
-) -> Result<Vec<File>> {
+async fn fetch_repo_files(repository: Repository) -> Result<Vec<File>> {
+    let Repository { owner: repo_owner, name: repo_name, branch: repo_branch } = repository;
     let url = format!("https://github.com/{repo_owner}/{repo_name}/archive/{repo_branch}.zip");
     let response = reqwest::get(url).await?.bytes().await?;
     let reader = std::io::Cursor::new(response);
@@ -89,12 +89,10 @@ async fn fetch_repo_files(
     Ok(files)
 }
 
-pub async fn fetch_file_content(
-    repo_owner: &str,
-    repo_name: &str,
-    repo_branch: &str,
+pub async fn fetch_file_content(repository: Repository,
     path: &str,
 ) -> Result<String> {
+    let Repository { owner: repo_owner, name: repo_name, branch: repo_branch } = repository;
     let url =
         format!("https://raw.githubusercontent.com/{repo_owner}/{repo_name}/{repo_branch}/{path}");
     let response = reqwest::get(url).await?;
