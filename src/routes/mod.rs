@@ -25,28 +25,21 @@ async fn embeddings(
     db: web::Data<Arc<QdrantDB>>,
     model: web::Data<Arc<Onnx>>,
 ) -> impl Responder {
-    let Repository {
-        name,
-        owner,
-        branch,
-    } = data.into_inner();
-
-    let embeddings = embed_repo(
-        Repository {
-            owner,
-            name,
-            branch,
-        },
-        model.get_ref().as_ref(),
-    )
-    .await
-    .unwrap();
-    db.get_ref()
-        .as_ref()
-        .insert_repo_embeddings(embeddings)
+    let embeddings = embed_repo(data.into_inner(), model.get_ref().as_ref())
         .await
         .unwrap();
-    HttpResponse::new(StatusCode::CREATED)
+    
+    match db.get_ref()
+        .as_ref()
+        .insert_repo_embeddings(embeddings)
+        .await {
+            Ok(_) => HttpResponse::new(StatusCode::CREATED),
+            Err(e) => {
+                println!("Error inserting embeddings: {:?}", e);
+                return HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+    
 }
 
 #[post("/query")]

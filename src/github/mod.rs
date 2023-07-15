@@ -3,8 +3,11 @@ use crate::{
     prelude::*,
 };
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use serde::{Serialize, Deserialize};
-use std::io::Read;
+use serde::{Deserialize, Serialize};
+use std::{
+    fmt::{Display, Formatter},
+    io::Read,
+};
 
 #[derive(Debug, Default, Serialize)]
 pub struct File {
@@ -13,11 +16,23 @@ pub struct File {
     pub length: usize,
 }
 
+impl Display for File {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "File path: {}\nFile length: {} bytes\nFile content: {}",
+            &self.path, &self.length, &self.content
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FileEmbeddings {
     pub path: String,
     pub embeddings: Embeddings,
 }
+
+#[derive(Debug)]
 pub struct RepositoryEmbeddings {
     pub repo_id: String,
     pub file_embeddings: Vec<FileEmbeddings>,
@@ -26,12 +41,19 @@ pub struct RepositoryEmbeddings {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Repository {
     pub owner: String,
-    pub name: String, 
-    pub branch: String
+    pub name: String,
+    pub branch: String,
 }
-pub async fn embed_repo<M: EmbeddingsModel + Send + Sync>(repository: Repository, model: &M,
+
+impl Display for Repository {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}-{}-{}", &self.owner, &self.name, &self.branch)
+    }
+}
+pub async fn embed_repo<M: EmbeddingsModel + Send + Sync>(
+    repository: Repository,
+    model: &M,
 ) -> Result<RepositoryEmbeddings> {
-    let Repository { owner: repo_owner, name: repo_name, branch: repo_branch } = &repository;
     let time = std::time::Instant::now();
     let files: Vec<File> = fetch_repo_files(repository.clone()).await?;
     println!("Time to fetch files: {:?}", time.elapsed());
@@ -39,29 +61,28 @@ pub async fn embed_repo<M: EmbeddingsModel + Send + Sync>(repository: Repository
     let file_embeddings: Vec<FileEmbeddings> = files
         .into_par_iter()
         .filter_map(|file| {
-            let File {
-                path,
-                length,
-                content,
-            } = file;
-            let embed_content = format!(
-                "File path: {}\nFile length: {} bytes\nFile content: {}",
-                &path, &length, &content
-            );
+            let embed_content = format!("{file}");
             let embeddings = model.embed(&embed_content).unwrap();
-            Some(FileEmbeddings { path, embeddings })
+            Some(FileEmbeddings {
+                path: file.path,
+                embeddings,
+            })
         })
         .collect();
     println!("Time to embed files: {:?}", time.elapsed());
-
+    println!("{repository}");
     Ok(RepositoryEmbeddings {
-        repo_id: format!("{repo_owner}-{repo_branch}-{repo_name}"),
+        repo_id: format!("{repository}"),
         file_embeddings,
     })
 }
 
 async fn fetch_repo_files(repository: Repository) -> Result<Vec<File>> {
-    let Repository { owner: repo_owner, name: repo_name, branch: repo_branch } = repository;
+    let Repository {
+        owner: repo_owner,
+        name: repo_name,
+        branch: repo_branch,
+    } = repository;
     let url = format!("https://github.com/{repo_owner}/{repo_name}/archive/{repo_branch}.zip");
     let response = reqwest::get(url).await?.bytes().await?;
     let reader = std::io::Cursor::new(response);
@@ -89,10 +110,12 @@ async fn fetch_repo_files(repository: Repository) -> Result<Vec<File>> {
     Ok(files)
 }
 
-pub async fn fetch_file_content(repository: Repository,
-    path: &str,
-) -> Result<String> {
-    let Repository { owner: repo_owner, name: repo_name, branch: repo_branch } = repository;
+pub async fn fetch_file_content(repository: Repository, path: &str) -> Result<String> {
+    let Repository {
+        owner: repo_owner,
+        name: repo_name,
+        branch: repo_branch,
+    } = repository;
     let url =
         format!("https://raw.githubusercontent.com/{repo_owner}/{repo_name}/{repo_branch}/{path}");
     let response = reqwest::get(url).await?;

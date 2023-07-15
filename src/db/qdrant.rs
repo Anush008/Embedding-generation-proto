@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::RepositoryEmbeddingsDB;
 use crate::{
     embeddings::Embeddings,
-    github::{fetch_file_content, File, FileEmbeddings, RepositoryEmbeddings, Repository},
+    github::{fetch_file_content, File, FileEmbeddings, Repository, RepositoryEmbeddings},
     prelude::*,
 };
 use anyhow::Ok;
@@ -58,15 +58,10 @@ impl RepositoryEmbeddingsDB for QdrantDB {
         query_embeddings: Embeddings,
         limit: u64,
     ) -> Result<Vec<File>> {
-        let Repository {
-            owner: repo_owner,
-            name: repo_name,
-            branch: repo_branch,
-        } = &repository;
         let search_response = self
             .client
             .search_points(&SearchPoints {
-                collection_name: format!("{repo_owner}-{repo_branch}-{repo_name}"),
+                collection_name: format!("{repository}"),
                 vector: query_embeddings,
                 with_payload: Some(true.into()),
                 limit,
@@ -79,10 +74,9 @@ impl RepositoryEmbeddingsDB for QdrantDB {
             .map(|point| {
                 let path = point.payload["path"].to_string();
                 async {
-                    let content =
-                        fetch_file_content(repository.clone(), &path)
-                            .await
-                            .unwrap_or_default();
+                    let content = fetch_file_content(repository.clone(), &path)
+                        .await
+                        .unwrap_or_default();
                     let length = content.len();
                     File {
                         path,
