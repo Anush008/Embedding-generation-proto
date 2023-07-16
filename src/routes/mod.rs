@@ -6,18 +6,10 @@ use actix_web::{
     HttpResponse, Responder,
 };
 use reqwest::StatusCode;
-use serde::Deserialize;
 use std::sync::Arc;
+use crate::utils::conversation::Query;
 
 use crate::{db::QdrantDB, embeddings::Onnx, github::embed_repo};
-
-#[derive(Deserialize)]
-struct Query {
-    repo_owner: String,
-    repo_name: String,
-    repo_branch: String,
-    query: String,
-}
 
 #[post("/embeddings")]
 async fn embeddings(
@@ -28,18 +20,14 @@ async fn embeddings(
     let embeddings = embed_repo(data.into_inner(), model.get_ref().as_ref())
         .await
         .unwrap();
-    
-    match db.get_ref()
-        .as_ref()
-        .insert_repo_embeddings(embeddings)
-        .await {
-            Ok(_) => HttpResponse::new(StatusCode::CREATED),
-            Err(e) => {
-                println!("Error inserting embeddings: {:?}", e);
-                return HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR);
-            }
+
+    match db.get_ref().insert_repo_embeddings(embeddings).await {
+        Ok(_) => HttpResponse::new(StatusCode::CREATED),
+        Err(e) => {
+            dbg!(e);
+            return HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR);
         }
-    
+    }
 }
 
 #[post("/query")]
@@ -49,26 +37,26 @@ async fn query(
     model: web::Data<Arc<Onnx>>,
 ) -> impl Responder {
     let Query {
-        repo_owner,
-        repo_name,
-        repo_branch,
+        repository: Repository {
+            owner,
+            name,
+            branch,
+        },
         query,
     } = data.into_inner();
-
-    let relevant_file_paths = db
+    let relevant_files = db
         .get_ref()
-        .as_ref()
         .get_relevant_files(
             Repository {
-                owner: repo_owner,
-                name: repo_name,
-                branch: repo_branch,
+                owner,
+                name,
+                branch,
             },
-            model.get_ref().as_ref().embed(&query).unwrap(),
+            model.get_ref().embed(&query).unwrap(),
             2,
         )
         .await
         .unwrap();
 
-    HttpResponse::Ok().json(relevant_file_paths)
+    HttpResponse::Ok().json(relevant_files)
 }

@@ -61,7 +61,7 @@ impl RepositoryEmbeddingsDB for QdrantDB {
         let search_response = self
             .client
             .search_points(&SearchPoints {
-                collection_name: format!("{repository}"),
+                collection_name: repository.to_string(),
                 vector: query_embeddings,
                 with_payload: Some(true.into()),
                 limit,

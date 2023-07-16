@@ -4,10 +4,7 @@ use crate::{
 };
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
-use std::{
-    fmt::{Display, Formatter},
-    io::Read,
-};
+use std::io::Read;
 
 #[derive(Debug, Default, Serialize)]
 pub struct File {
@@ -16,10 +13,9 @@ pub struct File {
     pub length: usize,
 }
 
-impl Display for File {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
+impl ToString for File {
+    fn to_string(&self) -> String {
+        format!(
             "File path: {}\nFile length: {} bytes\nFile content: {}",
             &self.path, &self.length, &self.content
         )
@@ -45,11 +41,12 @@ pub struct Repository {
     pub branch: String,
 }
 
-impl Display for Repository {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}-{}-{}", &self.owner, &self.name, &self.branch)
+impl ToString for Repository {
+    fn to_string(&self) -> String {
+        format!("{}-{}-{}", &self.owner, &self.name, &self.branch)
     }
 }
+
 pub async fn embed_repo<M: EmbeddingsModel + Send + Sync>(
     repository: Repository,
     model: &M,
@@ -61,7 +58,7 @@ pub async fn embed_repo<M: EmbeddingsModel + Send + Sync>(
     let file_embeddings: Vec<FileEmbeddings> = files
         .into_par_iter()
         .filter_map(|file| {
-            let embed_content = format!("{file}");
+            let embed_content = file.to_string();
             let embeddings = model.embed(&embed_content).unwrap();
             Some(FileEmbeddings {
                 path: file.path,
@@ -70,20 +67,19 @@ pub async fn embed_repo<M: EmbeddingsModel + Send + Sync>(
         })
         .collect();
     println!("Time to embed files: {:?}", time.elapsed());
-    println!("{repository}");
     Ok(RepositoryEmbeddings {
-        repo_id: format!("{repository}"),
+        repo_id: repository.to_string(),
         file_embeddings,
     })
 }
 
 async fn fetch_repo_files(repository: Repository) -> Result<Vec<File>> {
     let Repository {
-        owner: repo_owner,
-        name: repo_name,
-        branch: repo_branch,
+        owner,
+        name,
+        branch,
     } = repository;
-    let url = format!("https://github.com/{repo_owner}/{repo_name}/archive/{repo_branch}.zip");
+    let url = format!("https://github.com/{owner}/{name}/archive/{branch}.zip");
     let response = reqwest::get(url).await?.bytes().await?;
     let reader = std::io::Cursor::new(response);
     let mut archive = zip::ZipArchive::new(reader)?;

@@ -10,6 +10,7 @@ use actix_web::{web, App, HttpResponse, HttpServer};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    dotenv::dotenv().ok();
     let model: Arc<embeddings::Onnx> = Arc::new(embeddings::Onnx::new(Path::new("model")).unwrap());
     let db: Arc<db::QdrantDB> = Arc::new(db::QdrantDB::initialize().unwrap());
 
