@@ -1,4 +1,5 @@
 use crate::embeddings::EmbeddingsModel;
+use crate::utils::conversation::Query;
 use crate::{db::RepositoryEmbeddingsDB, github::Repository};
 use actix_web::{
     post,
@@ -7,7 +8,6 @@ use actix_web::{
 };
 use reqwest::StatusCode;
 use std::sync::Arc;
-use crate::utils::conversation::Query;
 
 use crate::{db::QdrantDB, embeddings::Onnx, github::embed_repo};
 

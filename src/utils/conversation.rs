@@ -1,7 +1,16 @@
 use crate::github::Repository;
-use openai_api_rs::v1::{api::Client, chat_completion::ChatCompletionMessage};
+use crate::prelude::*;
+use openai_api_rs::v1::{
+    api::Client,
+    chat_completion::{
+        ChatCompletionMessage, ChatCompletionRequest, ChatCompletionResponse, MessageRole,
+    },
+};
+
 use serde::Deserialize;
 use std::env;
+
+use super::prompts::{generate_completion_request, system_message};
 
 #[derive(Deserialize)]
 pub struct Query {
@@ -9,18 +18,63 @@ pub struct Query {
     pub query: String,
 }
 
+impl ToString for Query {
+    fn to_string(&self) -> String {
+        let Query {
+            repository:
+                Repository {
+                    owner,
+                    name,
+                    branch,
+                },
+            query,
+        } = self;
+        format!(
+            "##Repository Info##\nOwner:{}\nName:{}\nBranch:{}\n##User Query##Query:{}",
+            owner, name, branch, query
+        )
+    }
+}
+
 pub struct Conversation {
-    pub query: Query,
-    pub client: Client,
-    pub messages: Vec<ChatCompletionMessage>
+    query: Query,
+    client: Client,
+    messages: Vec<ChatCompletionMessage>,
 }
 
 impl Conversation {
     pub fn new(query: Query) -> Self {
         Self {
-            query,
-            messages: Vec::new(),
             client: Client::new(env::var("OPENAI_API_KEY").unwrap().to_string()),
+            messages: vec![
+                ChatCompletionMessage {
+                    name: None,
+                    function_call: None,
+                    role: MessageRole::system,
+                    content: Some(system_message()),
+                },
+                ChatCompletionMessage {
+                    name: None,
+                    function_call: None,
+                    role: MessageRole::user,
+                    content: Some(query.to_string()),
+                },
+            ],
+            query,
+        }
+    }
+
+    fn append_message(&mut self, message: ChatCompletionMessage) {
+        self.messages.push(message);
+    }
+
+    async fn send_request(&self, request: ChatCompletionRequest) -> Result<ChatCompletionResponse> {
+        Ok(self.client.chat_completion(request).await?)
+    }
+
+    pub async fn generate_answer(self) {
+        'conversation: loop {
+            let _request = generate_completion_request(self.messages.clone());
         }
     }
 }
