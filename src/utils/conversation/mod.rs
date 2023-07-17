@@ -1,3 +1,5 @@
+mod prompts;
+
 use crate::github::Repository;
 use crate::prelude::*;
 use openai_api_rs::v1::{
@@ -10,7 +12,7 @@ use openai_api_rs::v1::{
 use serde::Deserialize;
 use std::env;
 
-use super::prompts::{generate_completion_request, system_message};
+use prompts::{generate_completion_request, system_message};
 
 #[derive(Deserialize)]
 pub struct Query {
