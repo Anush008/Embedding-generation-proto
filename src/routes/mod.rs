@@ -36,27 +36,5 @@ async fn query(
     db: web::Data<Arc<QdrantDB>>,
     model: web::Data<Arc<Onnx>>,
 ) -> impl Responder {
-    let Query {
-        repository: Repository {
-            owner,
-            name,
-            branch,
-        },
-        query,
-    } = data.into_inner();
-    let relevant_files = db
-        .get_ref()
-        .get_relevant_files(
-            Repository {
-                owner,
-                name,
-                branch,
-            },
-            model.get_ref().embed(&query).unwrap(),
-            2,
-        )
-        .await
-        .unwrap();
-
-    HttpResponse::Ok().json(relevant_files)
+    todo!()
 }

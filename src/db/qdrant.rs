@@ -3,14 +3,17 @@ use std::collections::HashMap;
 use super::RepositoryEmbeddingsDB;
 use crate::{
     embeddings::Embeddings,
-    github::{fetch_file_content, File, FileEmbeddings, Repository, RepositoryEmbeddings},
+    github::{
+        fetch_file_content, File, FileEmbeddings, Repository, RepositoryEmbeddings,
+        RepositoryFilePaths,
+    },
     prelude::*,
 };
 use anyhow::Ok;
 use async_trait::async_trait;
 use qdrant_client::{
     prelude::*,
-    qdrant::{vectors_config::Config, VectorParams, VectorsConfig},
+    qdrant::{vectors_config::Config, ScrollPoints, VectorParams, VectorsConfig},
 };
 use rayon::prelude::*;
 use uuid::Uuid;
@@ -88,6 +91,31 @@ impl RepositoryEmbeddingsDB for QdrantDB {
             .collect();
         let files: Vec<File> = futures::future::join_all(futures).await;
         Ok(files)
+    }
+
+    async fn get_file_paths(&self, repository: Repository) -> Result<RepositoryFilePaths> {
+        let scroll_reponse = self
+            .client
+            .scroll(&ScrollPoints {
+                collection_name: repository.to_string(),
+                offset: None,
+                filter: None,
+                limit: Some(MAX_FILE_COUNT),
+                with_payload: Some(true.into()),
+                with_vectors: None,
+                read_consistency: None,
+            })
+            .await?;
+
+        let file_paths: Vec<String> = scroll_reponse
+            .result
+            .par_iter()
+            .map(|point| point.payload["path"].to_string())
+            .collect();
+        Ok(RepositoryFilePaths {
+            repo_id: repository.to_string(),
+            file_paths,
+        })
     }
 }
 impl QdrantDB {

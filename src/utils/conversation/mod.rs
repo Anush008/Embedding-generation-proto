@@ -32,7 +32,7 @@ impl ToString for Query {
             query,
         } = self;
         format!(
-            "##Repository Info##\nOwner:{}\nName:{}\nBranch:{}\n##User Query##Query:{}",
+            "##Repository Info##\nOwner:{}\nName:{}\nBranch:{}\n##User Query##\nQuery:{}",
             owner, name, branch, query
         )
     }
@@ -74,7 +74,7 @@ impl Conversation {
         Ok(self.client.chat_completion(request).await?)
     }
 
-    pub async fn generate_answer(self) {
+    pub async fn generate_answer(&self) {
         'conversation: loop {
             let _request = generate_completion_request(self.messages.clone());
         }
